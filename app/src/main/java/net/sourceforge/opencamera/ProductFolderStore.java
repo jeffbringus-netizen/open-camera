@@ -8,8 +8,11 @@ import android.preference.PreferenceManager;
 import android.provider.DocumentsContract;
 
 import java.io.IOException;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * Stores and resolves the active product-relative folder beneath Open Camera's
@@ -160,6 +163,93 @@ public final class ProductFolderStore {
         finally {
             if( cursor != null )
                 cursor.close();
+        }
+        Collections.sort(folders, String.CASE_INSENSITIVE_ORDER);
+        return folders;
+    }
+
+    /**
+     * Recursively lists folder paths beneath the selected SAF root. File rows are skipped.
+     */
+    public static ArrayList<String> listAllFolders(Context context, Uri treeUri) throws IOException {
+        if( treeUri == null )
+            throw new IOException("No main storage folder has been selected");
+
+        final String rootDocumentId;
+        try {
+            rootDocumentId = DocumentsContract.getTreeDocumentId(treeUri);
+        }
+        catch(IllegalArgumentException e) {
+            throw new IOException("Invalid main storage folder", e);
+        }
+
+        final class FolderEntry {
+            final String documentId;
+            final String path;
+            FolderEntry(String documentId, String path) {
+                this.documentId = documentId;
+                this.path = path;
+            }
+        }
+
+        ArrayDeque<FolderEntry> pending = new ArrayDeque<>();
+        Set<String> visited = new HashSet<>();
+        ArrayList<String> folders = new ArrayList<>();
+        pending.add(new FolderEntry(rootDocumentId, ""));
+
+        final String[] projection = new String[] {
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_MIME_TYPE
+        };
+
+        while( !pending.isEmpty() ) {
+            FolderEntry parent = pending.removeFirst();
+            if( parent.documentId == null || !visited.add(parent.documentId) )
+                continue;
+
+            Uri childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parent.documentId);
+            Cursor cursor = null;
+            try {
+                cursor = context.getContentResolver().query(childrenUri, projection, null, null, null);
+                if( cursor == null )
+                    throw new IOException("Unable to list folders in the selected storage provider");
+
+                int idIndex = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID);
+                int nameIndex = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME);
+                int mimeIndex = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE);
+                while( cursor.moveToNext() ) {
+                    if( !DocumentsContract.Document.MIME_TYPE_DIR.equals(cursor.getString(mimeIndex)) )
+                        continue;
+                    String name = cursor.getString(nameIndex);
+                    String documentId = cursor.getString(idIndex);
+                    if( name == null || name.isEmpty() || documentId == null )
+                        continue;
+
+                    String path = parent.path.isEmpty() ? name : parent.path + "/" + name;
+                    try {
+                        path = normalizePath(path);
+                    }
+                    catch(IllegalArgumentException ignored) {
+                        continue;
+                    }
+
+                    int depth = 1;
+                    for( int i = 0; i < path.length(); i++ ) {
+                        if( path.charAt(i) == '/' )
+                            depth++;
+                    }
+                    if( depth > 32 )
+                        continue;
+                    folders.add(path);
+                    if( depth < 32 )
+                        pending.addLast(new FolderEntry(documentId, path));
+                }
+            }
+            finally {
+                if( cursor != null )
+                    cursor.close();
+            }
         }
         Collections.sort(folders, String.CASE_INSENSITIVE_ORDER);
         return folders;
