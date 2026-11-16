@@ -95,7 +95,7 @@ public class ProductFolderActivity extends AppCompatActivity {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
             getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
 
-        io = Executors.newSingleThreadExecutor();
+        io = Executors.newFixedThreadPool(3);
         rootUri = readSelectedRoot();
         if (state != null) {
             page = state.getString("page", PAGE_PATHS);
