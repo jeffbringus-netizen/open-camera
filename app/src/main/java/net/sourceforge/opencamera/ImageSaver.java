@@ -144,6 +144,8 @@ public class ImageSaver extends Thread {
         final boolean is_front_facing;
         boolean mirror;
         final Date current_date;
+        // Destination captured when this save/batch request is created, not when its worker runs.
+        String product_folder = "";
         final HDRProcessor.TonemappingAlgorithm preference_hdr_tonemapping_algorithm; // for HDR
         final String preference_hdr_contrast_enhancement; // for HDR
         final int iso; // not applicable for RAW image
@@ -258,7 +260,7 @@ public class ImageSaver extends Thread {
          *  data will not be copied.
          */
         Request copy() {
-            return new Request(this.type,
+            Request copy = new Request(this.type,
                     this.process_type,
                     this.force_suffix,
                     this.suffix_offset,
@@ -286,6 +288,8 @@ public class ImageSaver extends Thread {
                     this.custom_tag_artist,
                     this.custom_tag_copyright,
                     this.sample_factor);
+            copy.product_folder = this.product_folder;
+            return copy;
         }
     }
 
@@ -786,6 +790,7 @@ public class ImageSaver extends Thread {
                 custom_tag_artist,
                 custom_tag_copyright,
                 sample_factor);
+        pending_image_average_request.product_folder = main_activity.getStorageUtils().getProductFolderPath();
     }
 
     void addImageBatch(byte [] image, float [] gyro_rotation_matrix) {
@@ -907,6 +912,7 @@ public class ImageSaver extends Thread {
                 custom_tag_artist,
                 custom_tag_copyright,
                 sample_factor);
+        request.product_folder = main_activity.getStorageUtils().getProductFolderPath();
 
         if( do_in_background ) {
             if( MyDebug.LOG )
@@ -1974,7 +1980,7 @@ public class ImageSaver extends Thread {
                 }
             }
             else if( storageUtils.isUsingSAF() ) {
-                saveUri = storageUtils.createOutputMediaFileSAF(StorageUtils.MEDIA_TYPE_IMAGE, filename_suffix, extension, request.current_date);
+                saveUri = storageUtils.createOutputMediaFileSAF(StorageUtils.MEDIA_TYPE_IMAGE, filename_suffix, extension, request.current_date, request.product_folder);
             }
             else if( MainActivity.useScopedStorage() ) {
                 if( MyDebug.LOG )
@@ -2392,7 +2398,7 @@ public class ImageSaver extends Thread {
             String suffix = "_";
             String filename_suffix = (request.force_suffix) ? suffix + (request.suffix_offset) : "";
             if( storageUtils.isUsingSAF() ) {
-                saveUri = storageUtils.createOutputMediaFileSAF(StorageUtils.MEDIA_TYPE_IMAGE, filename_suffix, "dng", request.current_date);
+                saveUri = storageUtils.createOutputMediaFileSAF(StorageUtils.MEDIA_TYPE_IMAGE, filename_suffix, "dng", request.current_date, request.product_folder);
                 if( MyDebug.LOG )
                     Log.d(TAG, "saveUri: " + saveUri);
                 // When using SAF, we don't save to a temp file first (unlike for JPEGs). Firstly we don't need to modify Exif, so don't

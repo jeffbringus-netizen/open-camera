@@ -2,6 +2,12 @@
     xmlns:android="http://schemas.android.com/apk/res/android" >
 
     <item
+        android:id="@+id/action_product_folder"
+        android:orderInCategory="90"
+        app:showAsAction="never"
+        android:title="@string/product_folder_menu"/>
+
+    <item
         android:id="@+id/action_settings"
         android:orderInCategory="100"
         app:showAsAction="never"

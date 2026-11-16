@@ -798,13 +798,22 @@ public class StorageUtils {
         return mediaFile;
     }
 
+    String getProductFolderPath() {
+        return ProductFolderStore.getActivePath(context);
+    }
+
     // only valid if isUsingSAF()
     Uri createOutputFileSAF(String filename, String mimeType) throws IOException {
+        return createOutputFileSAF(filename, mimeType, "");
+    }
+
+    // only valid if isUsingSAF()
+    Uri createOutputFileSAF(String filename, String mimeType, String productFolder) throws IOException {
         try {
             Uri treeUri = getTreeUriSAF();
             if( MyDebug.LOG )
                 Log.d(TAG, "treeUri: " + treeUri);
-            Uri docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, DocumentsContract.getTreeDocumentId(treeUri));
+            Uri docUri = ProductFolderStore.resolveFolderUri(context, treeUri, productFolder);
             if( MyDebug.LOG )
                 Log.d(TAG, "docUri: " + docUri);
             // note that DocumentsContract.createDocument will automatically append to the filename if it already exists
@@ -881,6 +890,11 @@ public class StorageUtils {
 
     // only valid if isUsingSAF()
     Uri createOutputMediaFileSAF(int type, String suffix, String extension, Date current_date) throws IOException {
+        return createOutputMediaFileSAF(type, suffix, extension, current_date, "");
+    }
+
+    // Creates output inside the product folder captured by the caller at capture/recording start.
+    Uri createOutputMediaFileSAF(int type, String suffix, String extension, Date current_date, String productFolder) throws IOException {
         String mimeType;
         switch (type) {
             case MEDIA_TYPE_IMAGE:
@@ -902,7 +916,7 @@ public class StorageUtils {
         }
         // note that DocumentsContract.createDocument will automatically append to the filename if it already exists
         String mediaFilename = createMediaFilename(type, suffix, 0, "." + extension, current_date);
-        return createOutputFileSAF(mediaFilename, mimeType);
+        return createOutputFileSAF(mediaFilename, mimeType, productFolder);
     }
 
     static class Media {

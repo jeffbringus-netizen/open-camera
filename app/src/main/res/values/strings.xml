@@ -3,6 +3,14 @@
 
     <string name="app_name">Open Camera</string> <!-- shouldn't be translated, unless deemed appropriate e.g. alternative alphabets -->
     <string name="action_settings">Settings</string>
+    <string name="product_folder_menu">Product folder…</string>
+    <string name="product_folder_title">Choose product folder</string>
+    <string name="product_folder_message">Enter a path below the main storage folder. Use / to create nested folders, for example SKU-123/Front. Leave it empty to save directly in the main folder.</string>
+    <string name="product_folder_hint">Product name / subfolder</string>
+    <string name="product_folder_saved">Saving captures to: %1$s</string>
+    <string name="product_folder_root_name">main folder</string>
+    <string name="product_folder_root_required">Choose a main storage folder first. Product folders are created inside that folder.</string>
+    <string name="product_folder_invalid">Could not use that folder path. Check the folder name and storage permissions.</string>
     <string name="action_popup">Popup settings</string>
     <string name="intro_ok">OK (This message won\'t show again)</string>
 

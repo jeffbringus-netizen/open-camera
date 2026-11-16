@@ -87,6 +87,7 @@ import android.view.GestureDetector;
 import android.view.GestureDetector.SimpleOnGestureListener;
 import android.view.KeyEvent;
 import android.view.Menu;
+import android.view.MenuItem;
 import android.view.MotionEvent;
 import android.view.OrientationEventListener;
 import android.view.Surface;
@@ -97,7 +98,9 @@ import android.view.ViewGroup;
 import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.view.animation.AccelerateDecelerateInterpolator;
+import android.widget.EditText;
 import android.widget.ImageButton;
+import android.widget.Toast;
 import android.widget.SeekBar;
 import android.widget.SeekBar.OnSeekBarChangeListener;
 import android.widget.TextView;
@@ -1082,6 +1085,72 @@ public class MainActivity extends AppCompatActivity implements PreferenceFragmen
         // Inflate the menu; this adds items to the action bar if it is present.
         getMenuInflater().inflate(R.menu.main, menu);
         return true;
+    }
+
+    @Override
+    public boolean onPrepareOptionsMenu(Menu menu) {
+        MenuItem productFolderItem = menu.findItem(R.id.action_product_folder);
+        if( productFolderItem != null ) {
+            String path = ProductFolderStore.getActivePath(this);
+            productFolderItem.setTitle(path.isEmpty()
+                    ? getString(R.string.product_folder_menu)
+                    : getString(R.string.product_folder_menu) + " (" + path + ")");
+        }
+        return super.onPrepareOptionsMenu(menu);
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        if( item.getItemId() == R.id.action_product_folder ) {
+            showProductFolderDialog();
+            return true;
+        }
+        if( item.getItemId() == R.id.action_settings ) {
+            openSettings();
+            return true;
+        }
+        return super.onOptionsItemSelected(item);
+    }
+
+    /** Lets the user select a product folder relative to the persistent SAF root. */
+    private void showProductFolderDialog() {
+        final StorageUtils storageUtils = applicationInterface.getStorageUtils();
+        if( !storageUtils.isUsingSAF() || storageUtils.getSaveLocationSAF().isEmpty() ) {
+            new AlertDialog.Builder(this)
+                    .setTitle(R.string.product_folder_title)
+                    .setMessage(R.string.product_folder_root_required)
+                    .setPositiveButton(R.string.choose_save_location, (dialog, which) -> openFolderChooserDialogSAF(false))
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show();
+            return;
+        }
+
+        final EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setHint(R.string.product_folder_hint);
+        input.setText(ProductFolderStore.getActivePath(this));
+        input.setSelection(input.getText().length());
+
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.product_folder_title)
+                .setMessage(R.string.product_folder_message)
+                .setView(input)
+                .setPositiveButton(android.R.string.ok, (dialog, which) -> {
+                    try {
+                        String productPath = ProductFolderStore.normalizePath(input.getText().toString());
+                        // Create missing product/subfolders before making this destination active.
+                        ProductFolderStore.resolveFolderUri(this, storageUtils.getTreeUriSAF(), productPath);
+                        ProductFolderStore.setActivePath(this, productPath);
+                        String destination = productPath.isEmpty() ? getString(R.string.product_folder_root_name) : productPath;
+                        Toast.makeText(this, getString(R.string.product_folder_saved, destination), Toast.LENGTH_LONG).show();
+                    }
+                    catch(Exception e) {
+                        MyDebug.logStackTrace(TAG, "Failed to select product folder", e);
+                        Toast.makeText(this, R.string.product_folder_invalid, Toast.LENGTH_LONG).show();
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
     }
 
     private void setFirstTimeFlag() {

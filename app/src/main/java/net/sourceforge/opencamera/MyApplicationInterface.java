@@ -353,7 +353,7 @@ public class MyApplicationInterface extends BasicApplicationInterface {
     }
 
     public Uri createOutputVideoSAF(boolean is_preshot, String extension, Date date) throws IOException {
-        last_video_file_uri = storageUtils.createOutputMediaFileSAF(is_preshot ? StorageUtils.MEDIA_TYPE_PRESHOT : StorageUtils.MEDIA_TYPE_VIDEO, "", extension, date);
+        last_video_file_uri = storageUtils.createOutputMediaFileSAF(is_preshot ? StorageUtils.MEDIA_TYPE_PRESHOT : StorageUtils.MEDIA_TYPE_VIDEO, "", extension, date, storageUtils.getProductFolderPath());
         return last_video_file_uri;
     }
 

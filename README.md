@@ -15,7 +15,7 @@ Keep Open Camera's camera engine and advanced controls while adding a persistent
 
 ## Status
 
-The Open Camera source base has been imported. Product-folder integration is being developed on the `feature/product-folder-routing` branch. This is development software and has not yet been device-tested.
+The Open Camera source base has been imported. Initial product-folder routing is implemented on the `feature/product-folder-routing` branch. Select the existing SAF main folder, then use the camera overflow menu's **Product folder…** action to enter a relative path such as `SKU-123/Front`. Missing directories are created on selection. JPEG, RAW/DNG and video SAF outputs use that destination; photo save requests snapshot the folder path before background processing. This is development software and has not yet been device-tested.
 
 ## Build
 
