@@ -3,7 +3,6 @@ package net.sourceforge.opencamera;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.database.Cursor;
-import android.graphics.Bitmap;
 import android.net.Uri;
 import android.preference.PreferenceManager;
 import android.provider.DocumentsContract;
@@ -14,7 +13,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.Comparator;
 
 /**
  * Stores and resolves the active product-relative folder beneath Open Camera's
