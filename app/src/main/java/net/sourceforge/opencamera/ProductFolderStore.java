@@ -69,7 +69,7 @@ public final class ProductFolderStore {
         StringBuilder stored = new StringBuilder();
         for( String recent : paths ) {
             if( stored.length() > 0 )
-                stored.append('\\n');
+                stored.append('\n');
             stored.append(recent);
         }
         PreferenceManager.getDefaultSharedPreferences(context).edit()

@@ -1209,7 +1209,7 @@ public class MainActivity extends AppCompatActivity implements PreferenceFragmen
                 .setPositiveButton(android.R.string.ok, (dialog, which) -> {
                     try {
                         String folderName = input.getText().toString().trim();
-                        if( folderName.isEmpty() || folderName.indexOf('/') >= 0 || folderName.indexOf('\\\\') >= 0 )
+                        if( folderName.isEmpty() || folderName.indexOf('/') >= 0 || folderName.indexOf('\\') >= 0 )
                             throw new IllegalArgumentException("Enter one folder name without path separators");
                         String path = parentPath.isEmpty() ? folderName : parentPath + "/" + folderName;
                         path = ProductFolderStore.normalizePath(path);
