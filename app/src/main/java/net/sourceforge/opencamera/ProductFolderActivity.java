@@ -2,6 +2,8 @@ package net.sourceforge.opencamera;
 
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -23,6 +25,7 @@ import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
+import android.widget.PopupMenu;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -63,6 +66,7 @@ public class ProductFolderActivity extends AppCompatActivity {
     private TextView foldersTab;
     private ProgressBar pathsProgress;
     private ProgressBar foldersProgress;
+    private EditText pathEditor;
 
     private Uri rootUri;
     private String page = PAGE_PATHS;
@@ -70,8 +74,10 @@ public class ProductFolderActivity extends AppCompatActivity {
     private String pathFilter = "";
     private String folderFilter = "";
     private String newPathValue = "";
+    private String selectedPath = "";
     private ArrayList<String> discoveredPaths = new ArrayList<>();
     private ArrayList<String> childFolders = new ArrayList<>();
+    private ArrayList<ProductFolderStore.FolderEntry> folderEntries = new ArrayList<>();
     private boolean pathsLoading;
     private boolean foldersLoading;
     private boolean pathsError;
@@ -97,12 +103,21 @@ public class ProductFolderActivity extends AppCompatActivity {
             pathFilter = state.getString("pathFilter", "");
             folderFilter = state.getString("folderFilter", "");
             newPathValue = state.getString("newPathValue", ProductFolderStore.getActivePath(this));
+            selectedPath = state.getString("selectedPath", ProductFolderStore.getActivePath(this));
         }
         else {
             newPathValue = ProductFolderStore.getActivePath(this);
+            selectedPath = newPathValue;
         }
         buildShell();
         renderPage();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // Reset the one-shot guard after MainActivity returns to this picker.
+        launching = false;
     }
 
     @Override
@@ -112,6 +127,7 @@ public class ProductFolderActivity extends AppCompatActivity {
         state.putString("pathFilter", pathFilter);
         state.putString("folderFilter", folderFilter);
         state.putString("newPathValue", newPathValue);
+        state.putString("selectedPath", selectedPath);
         super.onSaveInstanceState(state);
     }
 
@@ -255,21 +271,24 @@ public class ProductFolderActivity extends AppCompatActivity {
         populatePathRows();
 
         addSpace(pageContent, 16);
-        pageContent.addView(label(getString(R.string.product_folder_new_path_heading), 15, INK, true));
+        pageContent.addView(label(getString(R.string.product_folder_selected_path), 15, INK, true));
         addSpace(pageContent, 6);
-        EditText pathInput = input(getString(R.string.product_folder_path_hint));
-        pathInput.setText(newPathValue);
-        pathInput.setSingleLine(true);
-        pathInput.setImeOptions(EditorInfo.IME_ACTION_DONE);
-        pathInput.addTextChangedListener(new TextWatcher() {
+        pathEditor = input(getString(R.string.product_folder_path_hint));
+        pathEditor.setText(newPathValue);
+        pathEditor.setSingleLine(true);
+        pathEditor.setImeOptions(EditorInfo.IME_ACTION_DONE);
+        pathEditor.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
-            @Override public void onTextChanged(CharSequence s, int start, int before, int count) { newPathValue = s.toString(); }
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                newPathValue = s.toString();
+                selectedPath = s.toString().trim();
+            }
             @Override public void afterTextChanged(Editable s) { }
         });
-        pageContent.addView(pathInput, new LinearLayout.LayoutParams(-1, dp(54)));
+        pageContent.addView(pathEditor, new LinearLayout.LayoutParams(-1, dp(54)));
         addSpace(pageContent, 10);
         pageContent.addView(action(getString(R.string.product_folder_start_camera), true,
-                () -> startCameraForPath(pathInput.getText().toString())));
+                () -> startCameraForPath(pathEditor.getText().toString())));
         loadAllPaths();
     }
 
@@ -378,10 +397,9 @@ public class ProductFolderActivity extends AppCompatActivity {
             pathRows.addView(label(getString(R.string.product_folder_list_error), 13, Color.rgb(180, 60, 60), false));
 
         LinkedHashSet<String> ordered = new LinkedHashSet<>();
-        String active = ProductFolderStore.getActivePath(this);
-        if (active != null && !active.isEmpty())
-            ordered.add(active);
         List<String> recent = ProductFolderStore.getRecentPaths(this);
+        if (selectedPath != null && !selectedPath.isEmpty())
+            ordered.add(selectedPath);
         ordered.addAll(recent);
         ordered.addAll(discoveredPaths);
 
@@ -390,23 +408,22 @@ public class ProductFolderActivity extends AppCompatActivity {
         for (String path : ordered) {
             if (!filter.isEmpty() && !path.toLowerCase(Locale.ROOT).contains(filter))
                 continue;
-            pathRows.addView(pathRow(path, path.equals(active), recent.contains(path)));
+            pathRows.addView(pathRow(path, path.equals(selectedPath), recent.contains(path)));
             addSpace(pathRows, 7);
             shown++;
         }
-        if (shown == 0 && !pathsLoading) {
+        if (shown == 0 && !pathsLoading)
             pathRows.addView(label(filter.isEmpty() ? getString(R.string.product_folder_paths_empty)
                     : getString(R.string.product_folder_search_empty), 13, MUTED, false));
-        }
         if (pathsProgress != null)
             pathsProgress.setVisibility(pathsLoading ? View.VISIBLE : View.GONE);
     }
 
-    private View pathRow(String path, boolean active, boolean recent) {
+    private View pathRow(String path, boolean selected, boolean recent) {
         LinearLayout row = new LinearLayout(this);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(14), dp(12), dp(12), dp(12));
-        row.setBackground(rounded(active ? 0x142F9CF2 : SURFACE, active ? ACCENT : LINE, 15));
+        row.setPadding(dp(14), dp(12), dp(8), dp(12));
+        row.setBackground(rounded(selected ? 0x142F9CF2 : SURFACE, selected ? ACCENT : LINE, 15));
         row.addView(label("▣", 21, ACCENT, true), new LinearLayout.LayoutParams(dp(32), -2));
         LinearLayout info = new LinearLayout(this);
         info.setOrientation(LinearLayout.VERTICAL);
@@ -415,11 +432,37 @@ public class ProductFolderActivity extends AppCompatActivity {
         if (path.contains("/"))
             info.addView(label(path.substring(0, path.lastIndexOf('/')), 11, MUTED, false));
         row.addView(info, new LinearLayout.LayoutParams(0, -2, 1f));
-        row.addView(label(active ? getString(R.string.product_folder_current_tag)
-                : recent ? getString(R.string.product_folder_recent_tag) : "›",
-                active || recent ? 9 : 24, active ? ACCENT : MUTED, true));
-        row.setOnClickListener(v -> startCameraForPath(path));
+        row.addView(label(selected ? getString(R.string.product_folder_selected_tag)
+                : recent ? getString(R.string.product_folder_recent_tag) : "", 9,
+                selected ? ACCENT : MUTED, true));
+        TextView more = label("⋮", 21, MUTED, true);
+        more.setGravity(Gravity.CENTER);
+        row.addView(more, new LinearLayout.LayoutParams(dp(34), dp(38)));
+        row.setOnClickListener(v -> selectPath(path));
+        more.setOnClickListener(v -> showFolderActions(v, path));
+        row.setOnLongClickListener(v -> { showFolderActions(v, path); return true; });
         return row;
+    }
+
+    private void selectPath(String path) {
+        selectedPath = path;
+        newPathValue = path;
+        if (pathEditor != null && !path.equals(pathEditor.getText().toString()))
+            pathEditor.setText(path);
+        populatePathRows();
+    }
+
+    private void showFolderActions(View anchor, String path) {
+        PopupMenu menu = new PopupMenu(this, anchor);
+        menu.getMenu().add(R.string.product_folder_rename).setOnMenuItemClickListener(item -> {
+            showRenameFolderDialog(path);
+            return true;
+        });
+        menu.getMenu().add(R.string.product_folder_delete).setOnMenuItemClickListener(item -> {
+            confirmDeleteFolder(path);
+            return true;
+        });
+        menu.show();
     }
 
     private void populateFolderRows() {
@@ -431,40 +474,181 @@ public class ProductFolderActivity extends AppCompatActivity {
 
         String filter = folderFilter.toLowerCase(Locale.ROOT).trim();
         int shown = 0;
-        for (String name : childFolders) {
-            if (!filter.isEmpty() && !name.toLowerCase(Locale.ROOT).contains(filter))
+        for (ProductFolderStore.FolderEntry entry : folderEntries) {
+            if (!filter.isEmpty() && !entry.name.toLowerCase(Locale.ROOT).contains(filter))
                 continue;
-            LinearLayout row = new LinearLayout(this);
-            row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setPadding(dp(14), dp(12), dp(12), dp(12));
-            row.setBackground(rounded(SURFACE, LINE, 15));
-            row.addView(label("▣", 21, ACCENT, true), new LinearLayout.LayoutParams(dp(32), -2));
-            TextView nameView = label(name, 15, INK, true);
-            LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(0, -2, 1f);
-            nameParams.leftMargin = dp(8);
-            row.addView(nameView, nameParams);
-            row.addView(label("›", 24, MUTED, false));
-            row.setOnClickListener(v -> {
-                folderPath = folderPath.isEmpty() ? name : folderPath + "/" + name;
-                folderFilter = "";
-                childFolders.clear();
-                renderPage();
-            });
-            String fullPath = folderPath.isEmpty() ? name : folderPath + "/" + name;
-            row.setOnLongClickListener(v -> {
-                startCameraForPath(fullPath);
-                return true;
-            });
-            folderRows.addView(row);
+            if (entry.isDirectory()) {
+                LinearLayout row = new LinearLayout(this);
+                row.setGravity(Gravity.CENTER_VERTICAL);
+                row.setPadding(dp(12), dp(9), dp(6), dp(9));
+                row.setBackground(rounded(SURFACE, LINE, 15));
+                TextView icon = label("▣", 21, ACCENT, true);
+                icon.setGravity(Gravity.CENTER);
+                row.addView(icon, new LinearLayout.LayoutParams(dp(54), dp(54)));
+                TextView name = label(entry.name, 14, INK, true);
+                LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(0, -2, 1f);
+                nameParams.leftMargin = dp(8);
+                row.addView(name, nameParams);
+                TextView more = label("⋮", 21, MUTED, true);
+                more.setGravity(Gravity.CENTER);
+                row.addView(more, new LinearLayout.LayoutParams(dp(38), dp(44)));
+                String fullPath = folderPath.isEmpty() ? entry.name : folderPath + "/" + entry.name;
+                row.setOnClickListener(v -> {
+                    folderPath = fullPath;
+                    folderFilter = "";
+                    folderEntries.clear();
+                    renderPage();
+                });
+                more.setOnClickListener(v -> showFolderActions(v, fullPath));
+                row.setOnLongClickListener(v -> { showFolderActions(v, fullPath); return true; });
+                folderRows.addView(row);
+            }
+            else if (entry.isImage()) {
+                LinearLayout row = new LinearLayout(this);
+                row.setGravity(Gravity.CENTER_VERTICAL);
+                row.setPadding(dp(8), dp(7), dp(6), dp(7));
+                row.setBackground(rounded(SURFACE, LINE, 15));
+                ImageView thumbnail = new ImageView(this);
+                thumbnail.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                thumbnail.setBackground(rounded(0xFFE8EDF2, LINE, 9));
+                thumbnail.setTag(entry.uri.toString());
+                row.addView(thumbnail, new LinearLayout.LayoutParams(dp(64), dp(64)));
+                loadThumbnail(entry, thumbnail);
+                TextView name = label(entry.name, 13, INK, true);
+                LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(0, -2, 1f);
+                nameParams.leftMargin = dp(10);
+                nameParams.rightMargin = dp(6);
+                row.addView(name, nameParams);
+                TextView more = label("⋮", 21, MUTED, true);
+                more.setGravity(Gravity.CENTER);
+                row.addView(more, new LinearLayout.LayoutParams(dp(38), dp(44)));
+                row.setOnClickListener(v -> showImagePreview(entry));
+                more.setOnClickListener(v -> showImageActions(v, entry));
+                row.setOnLongClickListener(v -> { showImageActions(v, entry); return true; });
+                folderRows.addView(row);
+            }
             addSpace(folderRows, 7);
             shown++;
         }
-        if (shown == 0 && !foldersLoading) {
-            folderRows.addView(label(filter.isEmpty() ? getString(R.string.product_folder_paths_empty)
+        if (shown == 0 && !foldersLoading)
+            folderRows.addView(label(filter.isEmpty() ? getString(R.string.product_folder_items_empty)
                     : getString(R.string.product_folder_search_empty), 13, MUTED, false));
-        }
         if (foldersProgress != null)
             foldersProgress.setVisibility(foldersLoading ? View.VISIBLE : View.GONE);
+    }
+
+    private void showImageActions(View anchor, ProductFolderStore.FolderEntry entry) {
+        PopupMenu menu = new PopupMenu(this, anchor);
+        menu.getMenu().add(R.string.product_folder_delete_image).setOnMenuItemClickListener(item -> {
+            new AlertDialog.Builder(this)
+                    .setTitle(R.string.product_folder_delete_image)
+                    .setMessage(getString(R.string.product_folder_delete_image_confirm, entry.name))
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .setPositiveButton(R.string.product_folder_delete, (dialog, which) -> deleteImage(entry))
+                    .show();
+            return true;
+        });
+        menu.show();
+    }
+
+    private void loadThumbnail(ProductFolderStore.FolderEntry entry, ImageView target) {
+        final String key = entry.uri.toString();
+        io.execute(() -> {
+            Bitmap bitmap = null;
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+                    bitmap = getContentResolver().loadThumbnail(entry.uri, new android.util.Size(dp(96), dp(96)), null);
+            }
+            catch (Exception ignored) {
+            }
+            if (bitmap == null)
+                bitmap = decodeImage(entry.uri, 160);
+            final Bitmap result = bitmap;
+            mainHandler.post(() -> {
+                if (!isFinishing() && key.equals(target.getTag()) && result != null)
+                    target.setImageBitmap(result);
+            });
+        });
+    }
+
+    private Bitmap decodeImage(Uri uri, int maxDimension) {
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        try (java.io.InputStream input = getContentResolver().openInputStream(uri)) {
+            if (input == null)
+                return null;
+            BitmapFactory.decodeStream(input, null, bounds);
+        }
+        catch (Exception e) {
+            return null;
+        }
+        int sample = 1;
+        while (bounds.outWidth / sample > maxDimension * 2 || bounds.outHeight / sample > maxDimension * 2)
+            sample *= 2;
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inSampleSize = sample;
+        options.inPreferredConfig = Bitmap.Config.RGB_565;
+        try (java.io.InputStream input = getContentResolver().openInputStream(uri)) {
+            if (input == null)
+                return null;
+            return BitmapFactory.decodeStream(input, null, options);
+        }
+        catch (Exception e) {
+            return null;
+        }
+    }
+
+    private void showImagePreview(ProductFolderStore.FolderEntry entry) {
+        ImageView preview = new ImageView(this);
+        preview.setAdjustViewBounds(true);
+        preview.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        preview.setTag(entry.uri.toString());
+        preview.setMinimumHeight(dp(220));
+        preview.setMaxHeight(dp(460));
+        new AlertDialog.Builder(this)
+                .setTitle(entry.name)
+                .setView(preview)
+                .setPositiveButton(android.R.string.ok, null)
+                .setNegativeButton(R.string.product_folder_delete_image, (dialog, which) ->
+                        new AlertDialog.Builder(this)
+                                .setTitle(R.string.product_folder_delete_image)
+                                .setMessage(getString(R.string.product_folder_delete_image_confirm, entry.name))
+                                .setNegativeButton(android.R.string.cancel, null)
+                                .setPositiveButton(R.string.product_folder_delete, (d, w) -> deleteImage(entry))
+                                .show())
+                .show();
+        final String key = entry.uri.toString();
+        io.execute(() -> {
+            Bitmap result = decodeImage(entry.uri, 1400);
+            mainHandler.post(() -> {
+                if (!isFinishing() && key.equals(preview.getTag())) {
+                    if (result != null)
+                        preview.setImageBitmap(result);
+                    else
+                        Toast.makeText(this, R.string.product_folder_image_unavailable, Toast.LENGTH_SHORT).show();
+                }
+            });
+        });
+    }
+
+    private void deleteImage(ProductFolderStore.FolderEntry entry) {
+        io.execute(() -> {
+            try {
+                ProductFolderStore.deleteDocument(this, entry.uri);
+                mainHandler.post(() -> {
+                    if (isFinishing())
+                        return;
+                    Toast.makeText(this, R.string.product_folder_image_deleted, Toast.LENGTH_SHORT).show();
+                    loadChildFolders();
+                });
+            }
+            catch (Exception e) {
+                mainHandler.post(() -> {
+                    if (!isFinishing())
+                        Toast.makeText(this, R.string.product_folder_delete_failed, Toast.LENGTH_LONG).show();
+                });
+            }
+        });
     }
 
     private void loadAllPaths() {
@@ -509,21 +693,21 @@ public class ProductFolderActivity extends AppCompatActivity {
         foldersError = false;
         populateFolderRows();
         io.execute(() -> {
-            ArrayList<String> found = new ArrayList<>();
+            ArrayList<ProductFolderStore.FolderEntry> found = new ArrayList<>();
             boolean failed = false;
             try {
-                found = ProductFolderStore.listChildFolders(this, selectedRoot, selectedPath);
+                found = ProductFolderStore.listFolderContents(this, selectedRoot, selectedPath);
             }
             catch (Exception e) {
                 failed = true;
             }
-            final ArrayList<String> result = found;
+            final ArrayList<ProductFolderStore.FolderEntry> result = found;
             final boolean error = failed;
             mainHandler.post(() -> {
                 if (isFinishing() || request != foldersRequest || rootUri == null || !rootKey.equals(rootUri.toString())
                         || !selectedPath.equals(folderPath))
                     return;
-                childFolders = result;
+                folderEntries = result;
                 foldersLoading = false;
                 foldersError = error;
                 populateFolderRows();
@@ -561,10 +745,14 @@ public class ProductFolderActivity extends AppCompatActivity {
                     .putString(PreferenceKeys.SaveLocationSAFPreferenceKey, selected.toString()).apply();
             rootUri = selected;
             folderPath = "";
+            selectedPath = "";
+            newPathValue = "";
             pathFilter = "";
             folderFilter = "";
+            ProductFolderStore.setActivePath(this, "");
             discoveredPaths.clear();
             childFolders.clear();
+            folderEntries.clear();
             renderPage();
         }
         catch (Exception e) {
@@ -594,6 +782,118 @@ public class ProductFolderActivity extends AppCompatActivity {
         new AlertDialog.Builder(this).setTitle(R.string.product_folder_new_folder).setView(name)
                 .setPositiveButton(android.R.string.ok, (dialog, which) -> createFolder(name.getText().toString()))
                 .setNegativeButton(android.R.string.cancel, null).show();
+    }
+
+    private void showRenameFolderDialog(String oldPath) {
+        EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setText(oldPath.substring(oldPath.lastIndexOf('/') + 1));
+        input.setSelection(input.getText().length());
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.product_folder_rename)
+                .setView(input)
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(android.R.string.ok, (dialog, which) ->
+                        renameFolderPath(oldPath, input.getText().toString()))
+                .show();
+    }
+
+    private void renameFolderPath(String oldPath, String requestedName) {
+        String name = requestedName == null ? "" : requestedName.trim();
+        if (name.isEmpty() || name.contains("/") || name.contains("\\")) {
+            Toast.makeText(this, R.string.product_folder_name_invalid, Toast.LENGTH_LONG).show();
+            return;
+        }
+        int slash = oldPath.lastIndexOf('/');
+        String parent = slash < 0 ? "" : oldPath.substring(0, slash);
+        final String newPath;
+        try {
+            newPath = ProductFolderStore.normalizePath(parent.isEmpty() ? name : parent + "/" + name);
+        }
+        catch (IllegalArgumentException e) {
+            Toast.makeText(this, R.string.product_folder_name_invalid, Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (oldPath.equals(newPath))
+            return;
+        final Uri selectedRoot = rootUri;
+        io.execute(() -> {
+            try {
+                Uri document = ProductFolderStore.findFolderUri(this, selectedRoot, oldPath);
+                ProductFolderStore.renameDocument(this, document, name);
+                ProductFolderStore.renamePathReferences(this, oldPath, newPath);
+                mainHandler.post(() -> {
+                    if (isFinishing())
+                        return;
+                    selectedPath = replacePathPrefix(selectedPath, oldPath, newPath);
+                    newPathValue = replacePathPrefix(newPathValue, oldPath, newPath);
+                    folderPath = replacePathPrefix(folderPath, oldPath, newPath);
+                    if (pathEditor != null)
+                        pathEditor.setText(newPathValue);
+                    Toast.makeText(this, getString(R.string.product_folder_renamed, newPath), Toast.LENGTH_SHORT).show();
+                    discoveredPaths.clear();
+                    folderEntries.clear();
+                    renderPage();
+                });
+            }
+            catch (Exception e) {
+                mainHandler.post(() -> {
+                    if (!isFinishing())
+                        Toast.makeText(this, R.string.product_folder_rename_failed, Toast.LENGTH_LONG).show();
+                });
+            }
+        });
+    }
+
+    private String replacePathPrefix(String path, String oldPath, String newPath) {
+        if (path == null || oldPath == null || !(path.equals(oldPath) || path.startsWith(oldPath + "/")))
+            return path == null ? "" : path;
+        return newPath + path.substring(oldPath.length());
+    }
+
+    private void confirmDeleteFolder(String path) {
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.product_folder_delete)
+                .setMessage(getString(R.string.product_folder_delete_folder_confirm, path))
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(R.string.product_folder_delete, (dialog, which) -> deleteFolderPath(path))
+                .show();
+    }
+
+    private void deleteFolderPath(String path) {
+        int slash = path.lastIndexOf('/');
+        String parent = slash < 0 ? "" : path.substring(0, slash);
+        final Uri selectedRoot = rootUri;
+        io.execute(() -> {
+            try {
+                Uri document = ProductFolderStore.findFolderUri(this, selectedRoot, path);
+                ProductFolderStore.deleteDocument(this, document);
+                ProductFolderStore.removePathReferences(this, path);
+                mainHandler.post(() -> {
+                    if (isFinishing())
+                        return;
+                    selectedPath = isSameOrChild(selectedPath, path) ? parent : selectedPath;
+                    newPathValue = isSameOrChild(newPathValue, path) ? parent : newPathValue;
+                    folderPath = isSameOrChild(folderPath, path) ? parent : folderPath;
+                    if (pathEditor != null)
+                        pathEditor.setText(newPathValue);
+                    Toast.makeText(this, R.string.product_folder_deleted, Toast.LENGTH_SHORT).show();
+                    discoveredPaths.clear();
+                    folderEntries.clear();
+                    renderPage();
+                });
+            }
+            catch (Exception e) {
+                mainHandler.post(() -> {
+                    if (!isFinishing())
+                        Toast.makeText(this, R.string.product_folder_delete_failed, Toast.LENGTH_LONG).show();
+                });
+            }
+        });
+    }
+
+    private boolean isSameOrChild(String path, String parent) {
+        return path != null && (path.equals(parent) || path.startsWith(parent + "/"));
     }
 
     private void createFolder(String rawName) {
