@@ -231,6 +231,8 @@ public class PreferenceKeys {
 
     public static final String ProductFolderPathPreferenceKey = "preference_product_folder_path";
 
+    public static final String RecentProductFoldersPreferenceKey = "preference_recent_product_folders";
+
     public static final String SaveLocationHistoryBasePreferenceKey = "save_location_history";
 
     public static final String SaveLocationHistorySAFBasePreferenceKey = "save_location_history_saf";

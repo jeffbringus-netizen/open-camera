@@ -8,12 +8,16 @@ import android.preference.PreferenceManager;
 import android.provider.DocumentsContract;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
 
 /**
  * Stores and resolves the active product-relative folder beneath Open Camera's
  * existing, persistently granted Storage Access Framework tree.
  */
 public final class ProductFolderStore {
+    private static final int MAX_RECENT_FOLDERS = 10;
+
     private ProductFolderStore() {
     }
 
@@ -26,6 +30,139 @@ public final class ProductFolderStore {
         String normalized = normalizePath(path);
         SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(context);
         preferences.edit().putString(PreferenceKeys.ProductFolderPathPreferenceKey, normalized).apply();
+    }
+
+
+    /** Returns the most recently used product folders, newest first. */
+    public static ArrayList<String> getRecentPaths(Context context) {
+        String stored = PreferenceManager.getDefaultSharedPreferences(context)
+                .getString(PreferenceKeys.RecentProductFoldersPreferenceKey, "");
+        ArrayList<String> paths = new ArrayList<>();
+        if( stored == null || stored.isEmpty() )
+            return paths;
+
+        for( String candidate : stored.split("\\n") ) {
+            try {
+                String path = normalizePath(candidate);
+                if( !path.isEmpty() && !paths.contains(path) )
+                    paths.add(path);
+            }
+            catch(IllegalArgumentException ignored) {
+                // Ignore invalid legacy entries rather than preventing the picker from opening.
+            }
+        }
+        return paths;
+    }
+
+    /** Adds a selected product folder to the recent list, keeping the newest first. */
+    public static void rememberRecentPath(Context context, String path) {
+        String normalized = normalizePath(path);
+        if( normalized.isEmpty() )
+            return;
+
+        ArrayList<String> paths = getRecentPaths(context);
+        paths.remove(normalized);
+        paths.add(0, normalized);
+        while( paths.size() > MAX_RECENT_FOLDERS )
+            paths.remove(paths.size() - 1);
+
+        StringBuilder stored = new StringBuilder();
+        for( String recent : paths ) {
+            if( stored.length() > 0 )
+                stored.append('\\n');
+            stored.append(recent);
+        }
+        PreferenceManager.getDefaultSharedPreferences(context).edit()
+                .putString(PreferenceKeys.RecentProductFoldersPreferenceKey, stored.toString())
+                .apply();
+    }
+
+    /** Lists the immediate child directories at a relative path beneath the SAF root. */
+    public static ArrayList<String> listChildFolders(Context context, Uri treeUri, String relativePath) throws IOException {
+        if( treeUri == null )
+            throw new IOException("No main storage folder has been selected");
+
+        String normalized = normalizePath(relativePath);
+        String rootDocumentId;
+        try {
+            rootDocumentId = DocumentsContract.getTreeDocumentId(treeUri);
+        }
+        catch(IllegalArgumentException e) {
+            throw new IOException("Invalid main storage folder", e);
+        }
+
+        Uri currentFolder = DocumentsContract.buildDocumentUriUsingTree(treeUri, rootDocumentId);
+        if( !normalized.isEmpty() ) {
+            for( String segment : normalized.split("/") ) {
+                Uri childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(
+                        treeUri, DocumentsContract.getDocumentId(currentFolder));
+                String childDocumentId = null;
+                Cursor cursor = null;
+                try {
+                    cursor = context.getContentResolver().query(
+                            childrenUri,
+                            new String[] {
+                                    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                                    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                                    DocumentsContract.Document.COLUMN_MIME_TYPE
+                            },
+                            null, null, null);
+                    if( cursor == null )
+                        throw new IOException("Unable to list folders in the selected storage provider");
+
+                    int idIndex = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID);
+                    int nameIndex = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME);
+                    int mimeIndex = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE);
+                    while( cursor.moveToNext() ) {
+                        if( segment.equals(cursor.getString(nameIndex))
+                                && DocumentsContract.Document.MIME_TYPE_DIR.equals(cursor.getString(mimeIndex)) ) {
+                            childDocumentId = cursor.getString(idIndex);
+                            break;
+                        }
+                    }
+                }
+                finally {
+                    if( cursor != null )
+                        cursor.close();
+                }
+
+                if( childDocumentId == null )
+                    throw new IOException("Folder no longer exists: " + segment);
+                currentFolder = DocumentsContract.buildDocumentUriUsingTree(treeUri, childDocumentId);
+            }
+        }
+
+        Uri childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(
+                treeUri, DocumentsContract.getDocumentId(currentFolder));
+        ArrayList<String> folders = new ArrayList<>();
+        Cursor cursor = null;
+        try {
+            cursor = context.getContentResolver().query(
+                    childrenUri,
+                    new String[] {
+                            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                            DocumentsContract.Document.COLUMN_MIME_TYPE
+                    },
+                    null, null, null);
+            if( cursor == null )
+                throw new IOException("Unable to list folders in the selected storage provider");
+
+            int nameIndex = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME);
+            int mimeIndex = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE);
+            while( cursor.moveToNext() ) {
+                if( DocumentsContract.Document.MIME_TYPE_DIR.equals(cursor.getString(mimeIndex)) ) {
+                    String name = cursor.getString(nameIndex);
+                    if( name != null && !name.isEmpty() )
+                        folders.add(name);
+                }
+            }
+        }
+        finally {
+            if( cursor != null )
+                cursor.close();
+        }
+        Collections.sort(folders, String.CASE_INSENSITIVE_ORDER);
+        return folders;
     }
 
     /**

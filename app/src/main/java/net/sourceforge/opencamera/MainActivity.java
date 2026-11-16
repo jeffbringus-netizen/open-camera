@@ -1112,7 +1112,7 @@ public class MainActivity extends AppCompatActivity implements PreferenceFragmen
         return super.onOptionsItemSelected(item);
     }
 
-    /** Lets the user select a product folder relative to the persistent SAF root. */
+    /** Shows recent product destinations and shortcuts into the folder browser. */
     private void showProductFolderDialog() {
         final StorageUtils storageUtils = applicationInterface.getStorageUtils();
         if( !storageUtils.isUsingSAF() || storageUtils.getSaveLocationSAF().isEmpty() ) {
@@ -1125,32 +1125,124 @@ public class MainActivity extends AppCompatActivity implements PreferenceFragmen
             return;
         }
 
+        String activePath = ProductFolderStore.getActivePath(this);
+        ProductFolderStore.rememberRecentPath(this, activePath);
+        final ArrayList<String> recentPaths = ProductFolderStore.getRecentPaths(this);
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this)
+                .setTitle(R.string.product_folder_title)
+                .setPositiveButton(R.string.product_folder_browse, (dialog, which) -> showProductFolderBrowser(""))
+                .setNeutralButton(R.string.product_folder_new_folder, (dialog, which) -> showProductFolderCreateDialog(""))
+                .setNegativeButton(android.R.string.cancel, null);
+
+        if( recentPaths.isEmpty() ) {
+            builder.setMessage(R.string.product_folder_no_recent);
+        }
+        else {
+            String[] labels = new String[recentPaths.size()];
+            for( int i = 0; i < recentPaths.size(); i++ ) {
+                String path = recentPaths.get(i);
+                labels[i] = path.equals(activePath)
+                        ? getString(R.string.product_folder_recent_current, path)
+                        : path;
+            }
+            builder.setItems(labels, (dialog, which) -> activateProductFolder(recentPaths.get(which)));
+        }
+        builder.show();
+    }
+
+    /** Displays the immediate child folders and allows navigation through nested product paths. */
+    private void showProductFolderBrowser(String currentPath) {
+        final StorageUtils storageUtils = applicationInterface.getStorageUtils();
+        try {
+            ArrayList<String> folders = ProductFolderStore.listChildFolders(
+                    this, storageUtils.getTreeUriSAF(), currentPath);
+            ArrayList<String> labels = new ArrayList<>();
+            if( !currentPath.isEmpty() )
+                labels.add(getString(R.string.product_folder_parent));
+            labels.addAll(folders);
+
+            AlertDialog.Builder builder = new AlertDialog.Builder(this)
+                    .setTitle(R.string.product_folder_browse_title)
+                    .setMessage(currentPath.isEmpty()
+                            ? getString(R.string.product_folder_browse_root)
+                            : currentPath)
+                    .setItems(labels.toArray(new String[0]), (dialog, which) -> {
+                        String selected = labels.get(which);
+                        if( !currentPath.isEmpty() && which == 0 ) {
+                            int lastSlash = currentPath.lastIndexOf('/');
+                            String parentPath = lastSlash < 0 ? "" : currentPath.substring(0, lastSlash);
+                            showProductFolderBrowser(parentPath);
+                        }
+                        else {
+                            String childPath = currentPath.isEmpty()
+                                    ? selected
+                                    : currentPath + "/" + selected;
+                            showProductFolderBrowser(childPath);
+                        }
+                    })
+                    .setPositiveButton(R.string.product_folder_use_this_folder,
+                            (dialog, which) -> activateProductFolder(currentPath))
+                    .setNeutralButton(R.string.product_folder_new_folder,
+                            (dialog, which) -> showProductFolderCreateDialog(currentPath))
+                    .setNegativeButton(android.R.string.cancel, null);
+            builder.show();
+        }
+        catch(Exception e) {
+            MyDebug.logStackTrace(TAG, "Failed to browse product folders", e);
+            Toast.makeText(this, R.string.product_folder_invalid, Toast.LENGTH_LONG).show();
+        }
+    }
+
+    /** Creates a new directory under the currently browsed path and activates it. */
+    private void showProductFolderCreateDialog(String parentPath) {
         final EditText input = new EditText(this);
         input.setSingleLine(true);
-        input.setHint(R.string.product_folder_hint);
-        input.setText(ProductFolderStore.getActivePath(this));
-        input.setSelection(input.getText().length());
+        input.setHint(R.string.product_folder_new_folder_hint);
 
         new AlertDialog.Builder(this)
-                .setTitle(R.string.product_folder_title)
-                .setMessage(R.string.product_folder_message)
+                .setTitle(R.string.product_folder_new_folder)
+                .setMessage(parentPath.isEmpty()
+                        ? getString(R.string.product_folder_browse_root)
+                        : parentPath)
                 .setView(input)
                 .setPositiveButton(android.R.string.ok, (dialog, which) -> {
                     try {
-                        String productPath = ProductFolderStore.normalizePath(input.getText().toString());
-                        // Create missing product/subfolders before making this destination active.
-                        ProductFolderStore.resolveFolderUri(this, storageUtils.getTreeUriSAF(), productPath);
-                        ProductFolderStore.setActivePath(this, productPath);
-                        String destination = productPath.isEmpty() ? getString(R.string.product_folder_root_name) : productPath;
-                        Toast.makeText(this, getString(R.string.product_folder_saved, destination), Toast.LENGTH_LONG).show();
+                        String folderName = input.getText().toString().trim();
+                        if( folderName.isEmpty() || folderName.indexOf('/') >= 0 || folderName.indexOf('\\\\') >= 0 )
+                            throw new IllegalArgumentException("Enter one folder name without path separators");
+                        String path = parentPath.isEmpty() ? folderName : parentPath + "/" + folderName;
+                        path = ProductFolderStore.normalizePath(path);
+                        ProductFolderStore.resolveFolderUri(this,
+                                applicationInterface.getStorageUtils().getTreeUriSAF(), path);
+                        activateProductFolder(path);
                     }
                     catch(Exception e) {
-                        MyDebug.logStackTrace(TAG, "Failed to select product folder", e);
+                        MyDebug.logStackTrace(TAG, "Failed to create product folder", e);
                         Toast.makeText(this, R.string.product_folder_invalid, Toast.LENGTH_LONG).show();
                     }
                 })
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
+    }
+
+    /** Makes an existing product path the active destination and records it as recent. */
+    private void activateProductFolder(String productPath) {
+        try {
+            StorageUtils storageUtils = applicationInterface.getStorageUtils();
+            ProductFolderStore.resolveFolderUri(this, storageUtils.getTreeUriSAF(), productPath);
+            ProductFolderStore.setActivePath(this, productPath);
+            ProductFolderStore.rememberRecentPath(this, productPath);
+            String destination = productPath.isEmpty()
+                    ? getString(R.string.product_folder_root_name)
+                    : productPath;
+            Toast.makeText(this, getString(R.string.product_folder_saved, destination), Toast.LENGTH_LONG).show();
+            invalidateOptionsMenu();
+        }
+        catch(Exception e) {
+            MyDebug.logStackTrace(TAG, "Failed to activate product folder", e);
+            Toast.makeText(this, R.string.product_folder_invalid, Toast.LENGTH_LONG).show();
+        }
     }
 
     private void setFirstTimeFlag() {
