@@ -660,10 +660,9 @@ public class ProductFolderActivity extends AppCompatActivity {
                 mainHandler.post(() -> {
                     if (isFinishing())
                         return;
+                    // Keep this picker underneath the camera so Back returns to Paths/Folders.
                     Intent camera = new Intent(this, MainActivity.class);
-                    camera.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
                     startActivity(camera);
-                    finish();
                 });
             }
             catch (Exception e) {
